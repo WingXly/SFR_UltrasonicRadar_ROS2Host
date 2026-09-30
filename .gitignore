@@ -1,3 +1,8 @@
 .vscode
+log
+build
+install
 
 laser_scan/.venv_laser_scan
+laser_scan/laser_scan/__pycache__
+laser_scan/log

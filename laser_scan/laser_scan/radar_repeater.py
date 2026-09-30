@@ -1,5 +1,5 @@
 import rclpy
-from rclpy import Node
+from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
 import asyncio
@@ -10,6 +10,7 @@ import queue
 
 
 DEVICE_NAME = "BT24"
+DEVICE_ADDRESS = "48:87:2D:D0:AB:0C"
 NOTIFY_UUID  = "0000ffe1-0000-1000-8000-00805f9b34fb"
 SERVO_SETP_ANGLE = 4.5
 
@@ -35,25 +36,9 @@ def ble_callback_when_notify(sender, data):
 
 
 async def ble_main():
-    # 1. 扫描
-    print("扫描中...")
-    devices = await BleakScanner.discover(timeout=8, return_adv=True) # 用8s扫描并记录所有蓝牙设备（允许返回广播数据），将结果储存在devices（字典）变量中。等待此步骤完成后main再继续进行
-    target = None                                                     # 声明一个目标设备
-    for dev, adv in devices.values():
-        name = adv.local_name or dev.name or ""
-        if DEVICE_NAME in name:
-            target = dev
-            break
-
-    if target is None:
-        print(f"未发现{DEVICE_NAME}")
-        return
-
-    # 2. 连接 + 订阅
-    async with BleakClient(target) as client:
-        print(f"已连接 {target.address}")
-        await client.start_notify(NOTIFY_UUID, ble_callback_when_notify)    # 订阅特征 NOTIFY_UUID ，并为这个特征的通知添加回调函数 callback_when_notify
-        print("等待数据... (Ctrl+C 退出)")
+    async with BleakClient(DEVICE_ADDRESS) as client:
+        print(f"已连接 {client.address}", flush=True)
+        await client.start_notify(NOTIFY_UUID, ble_callback_when_notify)
         while client.is_connected:
             await asyncio.sleep(1)
 
@@ -67,7 +52,7 @@ def ble_run():
 
 class RadarRepeater(Node):
     def __init__(self):
-        super.__init__("radar_repeater")
+        super().__init__("radar_repeater")
 
         self.pub_ = self.create_publisher(
             LaserScan, "/laser_scan",
@@ -87,6 +72,8 @@ class RadarRepeater(Node):
     def publish_scanData(self):
         self.get_data_from_blu()
         msg = LaserScan()
+        msg.header.frame_id = "laser_scan_frame"
+        msg.header.stamp = self.get_clock().now().to_msg()
         msg.angle_min = 0.0
         msg.angle_max = math.pi
         msg.angle_increment = math.radians(SERVO_SETP_ANGLE)
@@ -101,7 +88,7 @@ class RadarRepeater(Node):
             a, d = data_queue.get_nowait()
             ranges_index = int(a / SERVO_SETP_ANGLE)
             if 0 <= ranges_index < 41:
-                self.ranges_[ranges_index] = d # cm
+                self.ranges_[ranges_index] = d / 100.0 # cm to m
 
 
 def main(args=None):

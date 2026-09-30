@@ -1,9 +1,9 @@
 import rclpy
-from rclpy import Node
+from rclpy.node import Node
 
 class MyNode(Node):
     def __init__(self):
-        super.__init__("my_node")
+        super().__init__("my_node")
         self.get_logger().info("Hello World!")
 
 
