@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
+""" collect data from BLU and publish them on /laser_scan """
+
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-
-from geometry_msgs.msg import TransformStamped
-from tf2_ros import StaticTransformBroadcaster
 
 import asyncio
 from bleak import BleakClient
@@ -16,6 +17,7 @@ DEVICE_NAME = "BT24"
 DEVICE_ADDRESS = "48:87:2D:D0:AB:0C"
 NOTIFY_UUID  = "0000ffe1-0000-1000-8000-00805f9b34fb"
 SERVO_SETP_ANGLE = 4.5
+MSG_HEADER_FRAME_ID = "laser_scan_frame"
 
 data_queue = queue.Queue()
 
@@ -62,10 +64,6 @@ class RadarRepeater(Node):
         self.tim_ = self.create_timer(0.05, self.publish_scanData)
         self.get_logger().info("radar_repeater created!")
 
-        self.tf_broadcaster_ = StaticTransformBroadcaster(self)
-        self.publish_static_tf()
-        self.get_logger().info("static TF created!")
-
 
     def publish_scanData(self):
         self.get_data_from_blu()
@@ -83,7 +81,7 @@ class RadarRepeater(Node):
 
     def configure_pubMsg(self):
         msg = LaserScan()
-        msg.header.frame_id = "laser_scan_frame"
+        msg.header.frame_id = MSG_HEADER_FRAME_ID
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.angle_min = 0.0
         msg.angle_max = math.pi
@@ -92,22 +90,6 @@ class RadarRepeater(Node):
         msg.range_max = 2.0
         msg.ranges = self.ranges_
         return msg
-
-
-    def publish_static_tf(self):
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "map"
-        t.child_frame_id = "laser_scan_frame"
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = 0.0
-        t.transform.translation.z = 0.0
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = 0.0
-        t.transform.rotation.w = 1.0   # 单位四元数 = 无旋转
-        self.tf_broadcaster_.sendTransform(t)
-
 
 
 def main(args=None):
