@@ -2,8 +2,11 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 
+from geometry_msgs.msg import TransformStamped
+from tf2_ros import StaticTransformBroadcaster
+
 import asyncio
-from bleak import BleakClient, BleakScanner
+from bleak import BleakClient
 import threading
 import math
 import queue
@@ -22,7 +25,7 @@ data_queue = queue.Queue()
 
 def ble_callback_when_notify(sender, data):
     """每收到一包 BLE 数据就调用一次"""
-    text = data.decode(errors="ignore").strip()                       # 解码data（将从蓝牙中得到的数据转换为字符串），忽略错误，并去掉开头和结尾的\r\n
+    text = data.decode(errors="ignore").strip()
     if not text: return
 
     # 解析 "d=123,a=45"
@@ -53,33 +56,20 @@ def ble_run():
 class RadarRepeater(Node):
     def __init__(self):
         super().__init__("radar_repeater")
-
-        self.pub_ = self.create_publisher(
-            LaserScan, "/laser_scan",
-            10
-        )
-
-        self.tim_ = self.create_timer(
-            0.05,
-            self.publish_scanData
-        )
-
         self.ranges_ = [float("inf")] * int(1 + 180 / SERVO_SETP_ANGLE)
 
+        self.pub_ = self.create_publisher(LaserScan, "/laser_scan", 10)
+        self.tim_ = self.create_timer(0.05, self.publish_scanData)
         self.get_logger().info("radar_repeater created!")
+
+        self.tf_broadcaster_ = StaticTransformBroadcaster(self)
+        self.publish_static_tf()
+        self.get_logger().info("static TF created!")
 
 
     def publish_scanData(self):
         self.get_data_from_blu()
-        msg = LaserScan()
-        msg.header.frame_id = "laser_scan_frame"
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.angle_min = 0.0
-        msg.angle_max = math.pi
-        msg.angle_increment = math.radians(SERVO_SETP_ANGLE)
-        msg.range_min = 0.02
-        msg.range_max = 2.0
-        msg.ranges = self.ranges_
+        msg = self.configure_pubMsg()
         self.pub_.publish(msg)
 
 
@@ -89,6 +79,35 @@ class RadarRepeater(Node):
             ranges_index = int(a / SERVO_SETP_ANGLE)
             if 0 <= ranges_index < 41:
                 self.ranges_[ranges_index] = d / 100.0 # cm to m
+
+
+    def configure_pubMsg(self):
+        msg = LaserScan()
+        msg.header.frame_id = "laser_scan_frame"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.angle_min = 0.0
+        msg.angle_max = math.pi
+        msg.angle_increment = math.radians(SERVO_SETP_ANGLE)
+        msg.range_min = 0.02
+        msg.range_max = 2.0
+        msg.ranges = self.ranges_
+        return msg
+
+
+    def publish_static_tf(self):
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"
+        t.child_frame_id = "laser_scan_frame"
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
+        t.transform.translation.z = 0.0
+        t.transform.rotation.x = 0.0
+        t.transform.rotation.y = 0.0
+        t.transform.rotation.z = 0.0
+        t.transform.rotation.w = 1.0   # 单位四元数 = 无旋转
+        self.tf_broadcaster_.sendTransform(t)
+
 
 
 def main(args=None):
