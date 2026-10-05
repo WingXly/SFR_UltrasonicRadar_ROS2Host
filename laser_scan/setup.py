@@ -33,7 +33,8 @@ setup(
     entry_points={
         'console_scripts': [
             "radar_repeater = laser_scan.radar_repeater:main",
-            "radar_staticTFto_map = laser_scan.radar_staticTFto_map:main"
+            "radar_staticTFto_map = laser_scan.radar_staticTFto_map:main",
+            "stm32 = laser_scan.stm32:main"
         ],
     },
 )

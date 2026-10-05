@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+""" 已弃用，改用stm32.py，因为不再使用BT24蓝牙模块 """
 """ collect data from BLU and publish them on /laser_scan """
 
 
