@@ -12,7 +12,7 @@ import select
 BT_ADDR = "1D:06:44:03:24:CD"
 BT_PORT = 1
 RECONNECT_DELAY = 2.0        # 断线后重连间隔（秒）
-INIT_CMD = (0, 0)            # 下位机上电默认暂停，连上后必须发这条才会推数据
+INIT_CMD = (2, 1, 1)            # 初始化命令
 FRAME_HEAD_1 = 0xAA          # 帧头1
 FRAME_HEAD_2 = 0x55          # 帧头2
 FRAME_TAIL = 0x0D            # 帧尾
@@ -88,8 +88,8 @@ class STM32(Node):
         self.parser_ = RadarParser()
 
         self.RUNNING_ = True
-        self._stop_event_ = threading.Event()   # 用 Event 代替 sleep，退出更干脆
-        self.sock_ = None                       # 当前 socket（供 destroy_node 打断阻塞）
+        self._stop_event_ = threading.Event()
+        self.sock_ = None # 当前 socket（供 destroy_node 打断阻塞）
         self._sock_lock_ = threading.Lock()
         self._CONNECTED_ = False
 
@@ -181,21 +181,18 @@ class STM32(Node):
 
 
     def _receive_data(self, sock):
-        """返回收到的字节。
-
-        返回 None 表示**链路已断**，调用方必须据此结束 _io_loop 去重连：
-          - recv 抛 OSError，其中 errno 110 (ETIMEDOUT) 就是下位机
-            把空闲链路拆掉时内核上报的错误；
-          - recv 返回 b''，表示对端正常关闭。
-        这两种情况都不能被当成「这次没数据」而忽略掉。
-        """
+        """返回收到的字节。返回 None 表示链路已断"""
         try:
             data = sock.recv(1024)
         except OSError as e:
-            self.get_logger().error(f'蓝牙接收失败: {e}')
+            # 退出时 destroy_node 会主动关掉 socket，recv 随之报 EBADF，
+            # 这属于正常关闭路径，不必刷成错误日志。
+            if not self._stop_event_.is_set():
+                self.get_logger().error(f'蓝牙接收失败: {e}')
             return None
         if not data:
-            self.get_logger().warning('对端已关闭连接')
+            if not self._stop_event_.is_set():
+                self.get_logger().warning('对端已关闭连接')
             return None
         return data
 

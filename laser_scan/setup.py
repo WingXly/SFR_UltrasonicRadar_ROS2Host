@@ -32,9 +32,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            "radar_repeater = laser_scan.radar_repeater:main",
             "radar_staticTFto_map = laser_scan.radar_staticTFto_map:main",
-            "stm32 = laser_scan.stm32:main"
+            "stm32 = laser_scan.stm32:main",
+            "cmd_controller = laser_scan.cmd_controller:main"
         ],
     },
 )
