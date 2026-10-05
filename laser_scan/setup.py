@@ -34,7 +34,8 @@ setup(
         'console_scripts': [
             "radar_staticTFto_map = laser_scan.radar_staticTFto_map:main",
             "stm32 = laser_scan.stm32:main",
-            "cmd_controller = laser_scan.cmd_controller:main"
+            "cmd_controller = laser_scan.cmd_controller:main",
+            "visualizer = laser_scan.visualizer:main"
         ],
     },
 )
