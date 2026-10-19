@@ -4,8 +4,113 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Int32MultiArray
 
+class CommandError(Exception): pass
+
+
 TOPIC = '/radar/command'
 PUB_DEPTH = 10
+
+
+COMMANDS = {
+    ("start",):                (0, 0),
+    ("stop",):                 (0, 1),
+    ("oled",):                 (1, "bool"),
+    ("speed",):                (2, "value_operation", "uint16"),
+    ("cooling_time",):         (3, "value_operation", "uint16"),
+    ("resample",):             (4, "uint16"),
+}
+
+DISABLES = [
+    "stop",
+    "disable",
+    "off",
+    "0",
+    "no",
+    "not"
+]
+
+ENABLES = [
+    "start",
+    "enable",
+    "on",
+    "1",
+    "yes",
+    "go",
+    "run"
+]
+
+# 使用sorted列表索引，优先识别长命令
+COMMAND_SORTED_LIST = sorted(COMMANDS, key=len, reverse=True)
+
+
+def textList2cmd(parts: list):
+    """把输入解析成命令"""
+    if not parts:
+        return None
+
+    for cmd_type in COMMAND_SORTED_LIST:
+        if tuple(parts[:len(cmd_type)]) == cmd_type: # 定义命令类型
+            argv = parts[len(cmd_type):] # 定义参数
+            out = []
+
+            for item in COMMANDS[cmd_type]:
+                if item == "uint16":
+                    if not argv:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 缺少参数")
+
+                    try:
+                        value = int(argv[0])
+                    except ValueError:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 参数必须是整数: {argv[0]!r}")
+
+                    if not (0 <= value <= 65535):
+                        raise CommandError(f"'{' '.join(cmd_type)}' 参数类型必须为 uint16_t")
+
+                    out.append(value)
+                    argv.pop(0)
+
+                elif item == "value_operation":
+                    if not argv:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 缺少参数")
+
+                    if argv[0] == "set":
+                        out.append(1)
+
+                    elif argv[0] == "add":
+                        out.append(2)
+
+                    elif argv[0] == "remove":
+                        out.append(3)
+
+                    else:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 未知含义的参数: {argv[0]}")
+
+                    argv.pop(0)
+
+                elif item == "bool":
+                    if not argv:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 缺少参数")
+
+                    if argv[0].lower() in DISABLES:
+                        out.append(0)
+
+                    elif argv[0].lower() in ENABLES:
+                        out.append(1)
+
+                    else:
+                        raise CommandError(f"'{' '.join(cmd_type)}' 未知含义的参数: {argv[0]}")
+
+                    argv.pop(0)
+
+                else:
+                    out.append(item)
+
+            if argv:
+                raise CommandError(f"多余参数: {argv}")
+            
+            return out
+
+    raise CommandError(f"未知命令: {parts}")
 
 
 class CmdController(Node):
@@ -23,52 +128,10 @@ class CmdController(Node):
 
         msg = Int32MultiArray()
         msg.data = [int(v) for v in values]
+
         self.pub_.publish(msg)
-
-        self.get_logger().info(f"已发布 {list(msg.data)}")
+        self.get_logger().info(f"已发布 {msg.data}")
         return True
-
-
-def command_parser(p):
-    if   p[0] == "start":
-        return [0, 0]
-    elif p[0] == "stop":
-        return [0, 1]
-    
-    elif p[0] == "oled":
-        if   p[1] == "on":
-            return [1, 1]
-        elif p[1] == "off":
-            return [1, 0]
-
-    elif p[0] == "speed":
-        if len(p) < 3: return None
-        if   p[1] == "set":
-            return [2, 1, p[2]]
-        elif p[1] == "add":
-            return [2, 2, p[2]]
-        elif p[1] == "remove":
-            return [2, 3, p[2]]
-
-    elif p[0] == "cooling_time":
-        if p[1] == "set":
-            return [3, 1, p[2]]
-        elif p[1] == "add":
-            return [3, 2, p[2]]
-        elif p[2] == "remove":
-            return [3, 3, p[2]]
-
-
-def strline2cmd(line: str):
-    """把输入解析成命令"""
-    parts = line.split()
-    if not parts:
-        return None
-
-    try:
-        return command_parser(parts)
-    except ValueError:
-        return 'ERROR'
 
 
 def main(args=None):
@@ -80,36 +143,32 @@ def main(args=None):
 
     try:
         while rclpy.ok():
-            try:
-                line = input('> ')
-            except EOFError: # 如果主动按下Ctrl+C退出
-                print("已退出")
-                break
-
-            line = line.strip()
+            line = input('> ').strip().split()
             if not line:
                 continue
-            if line.lower() in ('q', 'quit', 'exit'):
+
+            if line[0].lower() in ['/']:
+                line.pop(0)
+            
+            if line[0].lower() in ['q', 'quit', 'exit']:
                 print("已退出")
                 break
 
-            values = strline2cmd(line)
-            if values is None:
-                continue
-            if values == 'ERROR':
-                node.get_logger().error(
-                    f'无法解析为整数: {line!r}')
+            try:
+                values = textList2cmd(line)
+            except CommandError as e:
+                node.get_logger().error(str(e))
                 continue
 
-            node.send_command(values)
+            if values is not None:
+                node.send_command(values)
 
     except KeyboardInterrupt:
-        print()
+        print("已退出")
 
     finally:
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

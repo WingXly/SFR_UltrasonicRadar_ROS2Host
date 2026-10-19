@@ -40,8 +40,9 @@ class PostProcessor:
         self.this_angle = 0
         self.previous_angle = 0
 
-        # 初始化坐标表格，分辨率：RESOLUTION_DEG
-        self.range = [DEFAULT] * round(180 / RESOLUTION_DEG + 1)
+        self.range = [DEFAULT] * (
+            round((ANGLE_MAX_DEG - ANGLE_MIN_DEG) / RESOLUTION_DEG) + 1
+        )
 
 
     def write(self, r, theta):
@@ -98,17 +99,20 @@ class PostProcessor:
         # 按要求选择滤波算法
         if algorithm.lower() == 'average':
             return sum(values) / len(values)
-        elif algorithm.lower() == 'mediam':
+        elif algorithm.lower() == 'median':
             values.sort()
             return values[len(values) // 2]
-        else:
-            pass
+
+        # 未知算法时退回平均值，避免函数隐式返回 None
+        return sum(values) / len(values)
 
 
     def interpolation_auto(self):
         '''将self.range里的float("inf")拟合为其他数字，采用线性插值'''
-        # 有效值索引表格
-        valid_index_list = [index for (index, value) in enumerate(self.range) if value is not DEFAULT]
+        # 用 isfinite 而不是 `value is not DEFAULT`：
+        # 后者比较的是对象身份，一旦别处赋入一个新的 float("inf") 就会失效。
+        valid_index_list = [index for (index, value) in enumerate(self.range)
+                            if math.isfinite(value)]
         if len(valid_index_list) <= 1: return
 
         for i in range(len(valid_index_list) - 1):
@@ -167,16 +171,14 @@ class RadarVisualizer(Node):
 
 
     def callback_subscription(self, msg: PolarCoordinates):
-        # 如果是第一次采样
-        if self.previous_angle is None:
-            previous_angle = msg.angle_degree
+        angle = msg.angle
 
-        # 如果角度变化，说明重复采样结束。开始后处理
-        elif msg.angle_degree != previous_angle:
-            previous_angle = msg.angle_degree
-            self.m_processor.feed_all(self.m_queue_feed_processor, msg.angle_degree)
+        # 如果不是第一次采样，且采样角度发生了变化，就将数据发送去后处理
+        if (self.previous_angle is not None) and (angle != self.previous_angle):
+            self.m_processor.feed_all(self.m_queue_feed_processor, self.previous_angle)
 
-        self.m_queue_feed_processor.put(msg.dist_m)
+        self.previous_angle = angle
+        self.m_queue_feed_processor.put(float(msg.radius))
 
 
     def callback_timer(self):
